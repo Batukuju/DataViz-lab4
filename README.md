@@ -16,5 +16,4 @@ Tasks solved using the dashboard
 Dashboard produced for the 4th project from Data Vizuzalization. 
 
 Dataset source: https://www.kaggle.com/datasets/paradisejoy/top-hits-spotify-from-20002019
-
 Live demo of the dashboard: https://batukuju.shinyapps.io/DataViz-lab4/
