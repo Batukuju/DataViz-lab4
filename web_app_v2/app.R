@@ -6,6 +6,8 @@
 #
 #    http://shiny.rstudio.com/
 #
+library(ggstream)
+library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(shiny)
@@ -51,7 +53,7 @@ raw_data <- data.frame(read.csv("songs_normalize.csv")) %>%
   rename(`duration[min]` = `duration_ms`) %>%
   select(-col, -genre_temp)
 
-data <- data_raw %>%
+data <- raw_data %>%
   separate(col = genre, into = paste("col", 1:4), sep = ", ", ,fill = "right", extra = "drop") %>%
   gather(`genre`, key = "col", 18:21, na.rm = TRUE) %>%
   distinct(.keep_all = TRUE) %>%
@@ -70,31 +72,32 @@ ui <- fluidPage(
   
   # Application title
   titlePanel("Top 2000 Spotify songs"),
-  fluidPage(
-  dashboardSidebar(
-  fluidRow(
-    #Main area for "future plots"
-    (column(7,
-           plotOutput("mainPlot"),
-           tableOutput("table")
-    )),
-    column(5,
-           mainPanel(
-             tabsetPanel(
-               #tab with summary plots
-               tabPanel("Summary", 
-                        "future_plot",
-                        plotOutput("summaryPlot"),
-                        plotOutput("summaryPlot2")
-                        ), 
-               #tab with sliders, gauge and valueBox
-               tabPanel("Search", 
-                        #popularity slider
-                        sidebarPanel(width = 12,
+  
+  
+  navbarPage("Menu",
+               
+    tabPanel("Summary",
+      fluidRow(
+        #Main area for "future plots"
+        column(12,
+               "two plots",
+               plotlyOutput("mainPlot"),
+               #tableOutput("table")
+               plotlyOutput("summaryPlot2")
+               
+        ),
+      )
+    ),
+    tabPanel("Search",
+      fluidRow(
+        h2("Choose your preferences and compare your result"),
+        column(5,
+               #popularity slider
+               sidebarPanel(width = 12,
                             sliderInput("popularitySlider",
                                         "Choose popularity:",
-                                        min = 0,#summaryPopularity[[1]],
-                                        max = 100,#summaryPopularity[[6]],
+                                        min = 0,
+                                        max = 100,
                                         value = c(50, 75)),
                             #duration slider
                             sliderInput("durationSlider",
@@ -113,25 +116,26 @@ ui <- fluidPage(
                                         "Choose genres:",
                                         choices = genres,
                                         multiple = TRUE,
-                                        selected = c("pop", "rock", "country")
-                                        ),),
-                        
-
-                        #"crazy" valueBox
-                        box(valueBox(value = "songsNumber",
-                                 subtitle = "Number of songs",
-                                 icon = "hashtag",
-                                 color = "bg-info")),
-                        #gauge
-                        box(gaugeOutput("gauge"))
-                        )
+                                        selected = c("pop", "rock")
+                            )
                ),
-             )
-           )
-  
+               #"crazy" valueBox
+               valueBox(value = "songsNumber",
+                        subtitle = "Number of songs",
+                        icon = "hashtag",
+                        color = "bg-info")
+               ),
+        column(7,
+               #plot parcord chart
+               plotlyOutput("summaryPlot"),
+               #gauge
+               gaugeOutput("gauge")
+               )
+      )
+      
+    ) 
   ) 
-)))
-
+)
 # Define server logic required to draw a histogram
 server <- function(input, output) {
     #data from "Search" section, reevaluated for later use
@@ -152,7 +156,7 @@ server <- function(input, output) {
     
     #I have no idea, why this doesn't work :/ 
     
-    output$mainPlot <- renderPlot({
+    output$mainPlot <- renderPlotly({
       bubble_attributes<-c("popularity", "genre", "song")
       data_bubble<-data %>%
         select(bubble_attributes)
@@ -167,21 +171,24 @@ server <- function(input, output) {
     })
     
     #parcoord plot summary
-    output$summaryPlot <- renderPlot({
+    output$summaryPlot <- renderPlotly({
       
-      selected_attributes<-c("duration_ms", "danceability", "energy", "loudness", "speechiness", "genre")
+      selected_attributes<-c("duration[min]", "danceability", "energy", "loudness", "speechiness", "genre")
       selected_data<-data %>% 
         dplyr::select(selected_attributes)%>%
+        filter(genre %in% input$genreChoice) %>%
         group_by(genre)%>%
         summarise_all(funs(mean))
       p <- ggparcoord(selected_data,columns = 2:length(selected_attributes), groupColumn = 1)+
         theme_minimal()+
         theme(
-          plot.title = element_text(size=10),
+          plot.title = element_text(size=18),
           legend.position = 'bottom'
-        )
-p
-})
+        ) + labs(title = "Parcoord graph of genres")
+      
+      ggplotly(p, tooltip = c("genre", "variable", "value"))
+    })
+    #helper function for barchart
     other<-function(quantity, type){
       if (quantity<10)
         return('other')
@@ -189,11 +196,8 @@ p
         return(type)
     }
     #barchart summary
-    output$summaryPlot2 <- renderPlot({
-      library(ggstream)
-      library(ggplot2)
-      
-      
+    output$summaryPlot2 <- renderPlotly({
+
       geom_attributes<-c("year","popularity", "genre")
       
       data_geomstream<-data %>% 
@@ -201,17 +205,18 @@ p
         filter(year>=2000)%>%
         group_by(year,genre) %>%
         count() %>%
-        mutate(genre = other(n,genre))
+        mutate(genre = other(n,genre)) %>%
+        rename(`number of songs` = n)
       
+      data_geomstream$genre<-reorder(data_geomstream$genre, data_geomstream$`number of songs`)
       
-      data_geomstream$genre<-reorder(data_geomstream$genre, data_geomstream$n)
-      
-      ggplot(data_geomstream, aes(fill=genre, y=n, x=year)) + 
+      p <- ggplot(data_geomstream, aes(fill=genre, y=`number of songs`, x=year)) + 
         geom_bar(position='stack', stat='identity')
+      ggplotly(p)
       
     })
     
-    #Renders a table
+    #renders a table
     output$table <- renderTable(reactive_data())
     
     #renders number of songs
