@@ -6,18 +6,21 @@
 #
 #    http://shiny.rstudio.com/
 #
-
+library(dplyr)
+library(tidyr)
 library(shiny)
 raw_data <- data.frame(read.csv("songs_normalize.csv")) %>%
   separate(col = genre, into = paste("col", 1:4), sep = ", ", ,fill = "right", extra = "drop") %>%
   gather(`genre_temp`, key = "col", 18:21, na.rm = TRUE) %>%
   distinct(.keep_all = TRUE) %>%
   mutate(`genre` = ifelse(`genre_temp` == "set()", "other", `genre_temp`)) %>%
+  mutate(`duration_ms` = signif(`duration_ms` / 60000, 2)) %>%
+  rename(`duration[min]` = `duration_ms`) %>%
   select(-col, -genre_temp)
 
 summaryPopularity <- summary(raw_data$popularity)
 summaryDanceability <- summary(raw_data$danceability)
-summaryDuration <- summary(raw_data$duration_ms)
+summaryDuration <- summary(raw_data$`duration[min]`)
 genres = unique(raw_data$genre)
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -35,21 +38,21 @@ ui <- fluidPage(
                tabPanel("Search", 
                         sliderInput("popularitySlider",
                                     "Choose popularity:",
-                                    min = summaryPopularity[[1]],
-                                    max = summaryPopularity[[6]],
-                                    value = c(summaryPopularity[[1]],summaryPopularity[[6]])),
+                                    min = 0,#summaryPopularity[[1]],
+                                    max = 100,#summaryPopularity[[6]],
+                                    value = c(50, 75)),
                         sliderInput("durationSlider",
-                                    "Choose duration:",
-                                    min = summaryDuration[[1]],
+                                    "Choose duration [minutes]:",
+                                    min = 0,
                                     max = summaryDuration[[6]],
-                                    value = c(summaryDuration[[1]],summaryDuration[[6]])),
+                                    value = c(2, 5)),
                         sliderInput("danceabilitySlider",
                                     "Choose danceability:",
-                                    min = summaryDanceability[[1]],
-                                    max = summaryDanceability[[6]],
-                                    value = c(summaryDanceability[[1]],summaryDanceability[[6]])),
+                                    min = 0,
+                                    max = 100,
+                                    value = c(25, 50)),
                         
-                        selectInput("genreChoice", "Genres", choices = genres,  multiple = TRUE)
+                        selectInput("genreChoice", "Genres", choices = genres,  multiple = TRUE, selected = c("pop", "rock", "country"))
                ),
                tabPanel("Out", "OUTPUT",
                         verbatimTextOutput("genreChoice")
@@ -86,7 +89,16 @@ server <- function(input, output) {
     
     output$genreChoice <- renderPrint(input$popularitySlider[1])
     
-    output$table <- renderTable(raw_data)
+    output$table <- renderTable(filter(raw_data, 
+                                       genre %in% input$genreChoice,
+                                       popularity >= input$popularitySlider[1],
+                                       popularity <= input$popularitySlider[2],
+                                       danceability >= input$danceabilitySlider[1] / 100,
+                                       danceability <= input$danceabilitySlider[2] / 100,
+                                       `duration[min]` >= input$durationSlider[1],
+                                       `duration[min]` <= input$durationSlider[2]) %>%
+                                  select(artist, song, year, popularity, tempo,  danceability, `duration[min]`, genre) %>%
+                                  arrange(-popularity))
     
 }
 
